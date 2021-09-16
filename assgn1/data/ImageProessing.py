@@ -1,8 +1,10 @@
 import os
+from matplotlib.colors import Normalize
 from skimage import io
 import numpy as np
-import scipy
+from scipy import interpolate
 import matplotlib.pyplot as plt
+from skimage.color.colorconv import rgb2hsv
 #task 1
 def ProcessInitial():
     #some constants
@@ -22,31 +24,31 @@ def ProcessInitial():
 #for all white balancing functions: 
 #INPUT: Red, Green, Blue, second row Green pixels in 2D array
 #OUTPUT: R, G, B pixel 2D arrays after white balancing
+
+#FINAL GRAYWORLD
+
 #GrayWorld
-def WBGrayWorld(imR, imG, imB, imGG):
-    pixelLen = len(imR[0]) * len(imR)
+def WBGrayWorld(imR, imG, imB):
     #find per channel average
-    avgR = sum(sum(imR)) / pixelLen
-    avgG = (sum(np.append(imG,imGG))) / (pixelLen * 2.)
-    avgB = sum(sum(imB)) / pixelLen
+    avgR = np.mean(imR)
+    avgG = np.mean(imG)
+    avgB = np.mean(imB)
     #apply transformation matrix(weight rbchannels)
     WBimR = imR * (avgG/avgR)
-    WBimG = np.add(imG, imGG) / 2. #naive: taking the average of the two
+    WBimG = imG 
     WBimB = imB * (avgG/avgB)
     #stack them here (or not)
     #im_rgb = np.dstack((WBimR, WBimG, WBimB))
     return (WBimR, WBimG, WBimB)
 
-def WBWhiteWorld(imR, imG, imB, imGG):
+def WBWhiteWorld(imR, imG, imB):
     #find per channel max
     maxR = np.amax(imR)
-    maxG = np.amax(np.append(imG,imGG))
+    maxG = np.amax(imG)
     maxB = np.amax(imB)
-    print("debug:" + str(maxG))
-    print("debug:" + str(maxB))
     #apply transformation matrix(weight rbchannels)
     WBimR = imR * (maxG/maxR)
-    WBimG = np.add(imG, imGG) / 2. #naive: taking the average of the two
+    WBimG = imG
     WBimB = imB * (maxG/maxB)
     #stack them here (or not)
     #im_rgb = np.dstack((WBimR, WBimG, WBimB))
@@ -54,38 +56,36 @@ def WBWhiteWorld(imR, imG, imB, imGG):
     #this function make sense at all? 
     return (WBimR, WBimG, WBimB)
 
-def WBCameraScale(imR, imG, imB, imGG):
+def WBCameraScale(imR, imG, imB):
     #color scale from camera
     rScale = 2.393118
     gScale = 1.0
     bScale = 1.223981
     #Q: if i multiply them doesn't this exceed 1?
     WBimR = imR * rScale
-    WBimG = np.add(imG, imGG) * gScale / 2.
+    WBimG = imG * gScale 
     WBimB = imB * bScale
     #stack them here (or not)
     #im_rgb = np.dstack((WBimR, WBimG, WBimB))
     return (WBimR, WBimG, WBimB)
 
+#helper function that zips arrays together
+def countList(lst1, lst2):
+    return np.array([[i, j] for i, j in zip(lst1, lst2)]).ravel()
 
 #Bayer Pattern
 def PatternHelper(BayerType, init):
-    initFlat = init.flatten() #makes indexing a little easier
     #try each one, and see which image looks the best
     #only take one green pixel
     imR = []
-    imG = []
+    imG = [] #top row green pixel
     imB = []
-    imGG = []
-    imGreen = []
-    print("debug")
-    print(initFlat)
+    imGG = [] #bot row green pixel
     if BayerType == "grbg":
         imR = init[0::2, 1::2]
         imG = init[0::2, 0::2]
         imB = init[1::2, 0::2]
         imGG = init[1::2, 1::2]
-
     elif BayerType == "rggb":
         imR = init[0::2, 0::2]
         imG = init[0::2, 1::2]
@@ -102,23 +102,97 @@ def PatternHelper(BayerType, init):
         imB = init[0::2, 1::2]
         imGG = init[1::2, 0::2]
     
-    return WBGrayWorld(imR, imG, imB, imGG)
+    #make the green pixel array
+    imGreen = np.zeros([init.shape[0],init.shape[1]//2])
+    imGreen[::2] = imG #first row
+    imGreen[1::2] = imGG #second
+    return imR, imGreen, imB
+    #return WBGrayWorld(imR, imG, imB, imGG)
     
 
 
 init = ProcessInitial()
-rgb_test = PatternHelper("rggb", init)
+imRR, imGG, imBB = PatternHelper("rggb", init)
+imR, imG, imB = WBCameraScale(imRR, imGG, imBB)
+#now interpolate the images
+print(init.shape)
+width = init.shape[1]
+height = init.shape[0]
+#Red channel
+xRed = np.arange(0, width, 2)
+yRed = np.arange(0, height, 2)
+fRed = interpolate.interp2d(xRed, yRed, imR, kind='linear')
+imRedChannel = fRed(range(width), range(height))
+print("red dimension")
+print(imRedChannel.shape)
+#Green Channel
+#added i%2 to account for odd number pixel images
 
+''' 
+########## this overflows and idk what to do with it lol
+xGreen = np.array([[j for j in range(i%2, width+i%2, 2)]for i in range(height)])
+print("xgreen")
+print(xGreen.shape)
+yGreen = np.array([[i for j in range(imG.shape[1])] for i in range(height)])
+print("ygreen")
+print(yGreen.shape)
+print("green")
+print(imG.shape)    
+fGreen = interpolate.interp2d(xGreen.flatten(), yGreen.flatten(), imG, kind='linear')
+imGreenChannel = fGreen(range(width), range(height))
 '''
+xGreen = np.arange(0, width, 2) #PROBLEM
+yGreen = np.arange(0, height)
+fGreen = interpolate.interp2d(xGreen, yGreen, imG, kind='linear')
+imGreenChannel = fGreen(range(width), range(height))
+#Blue Channel
+xBlue = np.arange(1, width, 2)
+yBlue = np.arange(1, height, 2)
+print(len(yBlue))
+fBlue = interpolate.interp2d(xBlue, yBlue, imB, kind='linear')
+imBlueChannel = fBlue(range(width), range(height))
 
+
+
+mXYZCam = np.array(
+    [
+        [6988,-1384,-714],
+        [-5631,13410,2447],
+        [-1485,2204,7318]
+    ]
+)*0.001
+
+mRGBXYZ = np.array(
+    [
+        [0.4124564, 0.3575761, 0.1804375],
+        [0.2126729, 0.7151522, 0.0721750],
+        [0.0193339, 0.1191920, 0.9503041]
+    ]
+)
+
+mRGBCam = np.matmul(mXYZCam, mRGBXYZ)
+#normalize it
+sumOfRows = mRGBCam.sum(axis=1)
+normalizedmRGBCam = mRGBCam / sumOfRows[:, np.newaxis]
+inverseM = np.linalg.inv(normalizedmRGBCam)
+
+rgb_camera = np.dstack((imRedChannel, imGreenChannel, imBlueChannel))
+plt.imshow(rgb_camera)
+plt.show()
+
+
+def mult(m):
+    return np.matmul(inverseM,m)
+why = np.apply_along_axis(mult,2,rgb_camera)
+print(why.shape)
+plt.imshow(why)
+plt.show()
 '''
+rgb_test = np.dstack((imRedChannel, imGreenChannel, imBlueChannel))
 print(np.shape(rgb_test))
 print (np.shape(init)) #shape = (4016, 6016)
 plt.imshow(rgb_test)
 plt.show()
 
-array1 = [1, 2, 3, 4]
-array2 = [4, 3, 2, 1]
-array3 = np.add(array1, array2)
-print(array3)
-#print(np.dtype(doublep))
+
+'''
