@@ -22,7 +22,7 @@ def ProcessInitial():
     return imgrLinear
 
 
-#WhiteBalancing
+#WhiteBalancing-------------------------------------------------------------
 #for all white balancing functions: 
 #INPUT: Red, Green, Blue, second row Green pixels in 2D array
 #OUTPUT: R, G, B pixel 2D arrays after white balancing
@@ -95,12 +95,12 @@ def WBCameraScale(imR, imG, imB):
     #stack them here (or not)
     #im_rgb = np.dstack((WBimR, WBimG, WBimB))
     return (WBimR, WBimG, WBimB)
-
+#--------------------------------------------------------------------------
 #helper function that zips arrays together
 def countList(lst1, lst2):
     return np.array([[i, j] for i, j in zip(lst1, lst2)]).ravel()
 
-#Bayer Pattern
+#Bayer Pattern------------------------------------------------------------
 def PatternHelper(BayerType, init):
     #try each one, and see which image looks the best
     #only take one green pixel
@@ -136,7 +136,7 @@ def PatternHelper(BayerType, init):
     return imR, imGreen, imB, imG, imGG
     #return WBGrayWorld(imR, imG, imB, imGG)
     
-#NOTE: demosaicing is assumping rggb layout
+#NOTE: demosaicing is assumping rggb layout -----------------------------------
 def Demosaicing (imR, imGTop, imGBot, imB, width, height):
     #Red channel
     xRed = np.arange(0, width, 2)
@@ -160,9 +160,9 @@ def Demosaicing (imR, imGTop, imGBot, imB, width, height):
     imGreenBot = fGBot(range(width), range(height))
     #Combine and take average 
     imGreenChannel = (imGreenTop + imGreenBot) / 2.
-    print(imGreenChannel)
     return imRedChannel, imGreenChannel, imBlueChannel
 
+#COLOR SPACE ---------------------------------------------------------------
 def GetInverseM():
     mXYZCam = np.array(
         [
@@ -186,11 +186,14 @@ def GetInverseM():
     normalizedmRGBCam = mRGBCam / sumOfRows[:, np.newaxis]
     return np.linalg.inv(normalizedmRGBCam)
 
+#Gamma Encoding--------------------------------------------------------------
+#helper
 def GamEncoding(x):
     if (x <= 0.0031308):
         return 12.92 * x
     else:
         return ((1 + 0.055) * math.pow(x, 1./2.4)) - 0.055
+
 
 def linearScaling(scale, CSCRed, CSCGreen, CSCBlue):
     gammaRed = CSCRed * scale
@@ -204,15 +207,25 @@ def linearScaling(scale, CSCRed, CSCGreen, CSCBlue):
     gammaBlue = np.clip(gammaBlue, 0. , 1.)
     return (gammaRed, gammaGreen, gammaBlue)
 
+
+#-----------------------------------------------------------
+#-----------------------------------------------------------
+#MAIN:
 init = ProcessInitial()
+##DETERMINING PATTERN
+#TIP: switch the string to try different encoding
 imRR, imGG, imBB, imGGTop, imGGBot = PatternHelper("rggb", init)
+
+#WHITE BALANCING
+#options include: WBGrayWorld, WBWhiteWorld, WBWhiteWorldManual, WBCameraScale
 imR, imG, imB = WBGrayWorld(imRR, imGG, imBB)
 
+#DEMOSAIC
 #now interpolate the images
-print(init.shape)
 width = init.shape[1]
 height = init.shape[0]
 imRedChannel, imGreenChannel, imBlueChannel = Demosaicing (imR, imGGTop, imGGBot, imB, width, height)
+#COLOR SPACE CORRECTION
 inverseM = GetInverseM()
 rgb_camera = np.dstack((imRedChannel, imGreenChannel, imBlueChannel))
 #can I still keep my channels separatae at this point - yes
@@ -226,18 +239,7 @@ gammaRed, gammaGreen, gammaBlue = linearScaling(LinearScalingConst, CSCRed, CSCG
 rgb_camera = np.dstack((gammaRed, gammaGreen, gammaBlue))
 
 
-plt.imshow(rgb_camera)
+plt.imshow(rgb_camera)     
 plt.show()
 #save the picture
-#io.imsave('compiled-25.jpg', rgb_camera, quality = 25)
-
-
-'''
-rgb_test = np.dstack((imRedChannel, imGreenChannel, imBlueChannel))
-print(np.shape(rgb_test))
-print (np.shape(init)) #shape = (4016, 6016)
-plt.imshow(rgb_test)
-plt.show()
-
-
-'''
+#io.imsave('WBGrayWorld-11.png', rgb_camera)
