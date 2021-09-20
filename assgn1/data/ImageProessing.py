@@ -7,6 +7,43 @@ import numpy as np
 from scipy import interpolate
 import matplotlib.pyplot as plt
 from skimage.color.colorconv import rgb2hsv
+
+def main():
+    #READING IMAGE AND LINEARLIZING---------------------------------------------
+    init = ProcessInitial()
+    ##DETERMINING PATTERN-------------------------------------------------------
+    #TIP: switch the string to try different encoding
+    imRR, imGG, imBB, imGGTop, imGGBot = PatternHelper("rggb", init)
+
+    #WHITE BALANCING------------------------------------------------------------
+    #options include: 
+    # WBGrayWorld, WBWhiteWorld, WBWhiteWorldManual, WBCameraScale
+    imR, imG, imB = WBGrayWorld(imRR, imGG, imBB)
+
+    #DEMOSAIC-------------------------------------------------------------------
+    #now interpolate the images
+    width = init.shape[1]
+    height = init.shape[0]
+    imRedChannel, imGreenChannel, imBlueChannel = Demosaicing (imR, imGGTop, imGGBot, imB, width, height)
+    #COLOR SPACE CORRECTION-----------------------------------------------------
+    inverseM = GetInverseM()
+    rgb_camera = np.dstack((imRedChannel, imGreenChannel, imBlueChannel))
+    #can I still keep my channels separatae at this point - yes
+    CSCRed = imRedChannel * inverseM[0][0] + imGreenChannel * inverseM[0][1] + imBlueChannel*inverseM[0][2]
+    CSCGreen = imRedChannel * inverseM[1][0] + imGreenChannel * inverseM[1][1] + imBlueChannel*inverseM[1][2]
+    CSCBlue = imRedChannel * inverseM[2][0] + imGreenChannel * inverseM[2][1] + imBlueChannel*inverseM[2][2]
+
+    #Brightness adjustment and gamma encoding-----------------------------------
+    LinearScalingConst = 1.55
+    gammaRed, gammaGreen, gammaBlue = linearScaling(LinearScalingConst, CSCRed, CSCGreen, CSCBlue)
+    rgb_camera = np.dstack((gammaRed, gammaGreen, gammaBlue))
+
+    #Display Image--------------------------------------------------------------
+    plt.imshow(rgb_camera)     
+    plt.show()
+    #save the picture
+    #io.imsave('WhiteWorldBalancing_final.jpg', rgb_camera)
+
 #task 1
 def ProcessInitial():
     #some constants
@@ -22,12 +59,10 @@ def ProcessInitial():
     return imgrLinear
 
 
-#WhiteBalancing-------------------------------------------------------------
+#WhiteBalancing-----------------------------------------------------------------
 #for all white balancing functions: 
 #INPUT: Red, Green, Blue, second row Green pixels in 2D array
 #OUTPUT: R, G, B pixel 2D arrays after white balancing
-
-#FINAL GRAYWORLD
 
 #GrayWorld
 def WBGrayWorld(imR, imG, imB):
@@ -163,6 +198,7 @@ def Demosaicing (imR, imGTop, imGBot, imB, width, height):
     return imRedChannel, imGreenChannel, imBlueChannel
 
 #COLOR SPACE ---------------------------------------------------------------
+#Calculates the color space transformation matrix
 def GetInverseM():
     mXYZCam = np.array(
         [
@@ -207,39 +243,4 @@ def linearScaling(scale, CSCRed, CSCGreen, CSCBlue):
     gammaBlue = np.clip(gammaBlue, 0. , 1.)
     return (gammaRed, gammaGreen, gammaBlue)
 
-
-#-----------------------------------------------------------
-#-----------------------------------------------------------
-#MAIN:
-init = ProcessInitial()
-##DETERMINING PATTERN
-#TIP: switch the string to try different encoding
-imRR, imGG, imBB, imGGTop, imGGBot = PatternHelper("rggb", init)
-
-#WHITE BALANCING
-#options include: WBGrayWorld, WBWhiteWorld, WBWhiteWorldManual, WBCameraScale
-imR, imG, imB = WBGrayWorld(imRR, imGG, imBB)
-
-#DEMOSAIC
-#now interpolate the images
-width = init.shape[1]
-height = init.shape[0]
-imRedChannel, imGreenChannel, imBlueChannel = Demosaicing (imR, imGGTop, imGGBot, imB, width, height)
-#COLOR SPACE CORRECTION
-inverseM = GetInverseM()
-rgb_camera = np.dstack((imRedChannel, imGreenChannel, imBlueChannel))
-#can I still keep my channels separatae at this point - yes
-CSCRed = imRedChannel * inverseM[0][0] + imGreenChannel * inverseM[0][1] + imBlueChannel*inverseM[0][2]
-CSCGreen = imRedChannel * inverseM[1][0] + imGreenChannel * inverseM[1][1] + imBlueChannel*inverseM[1][2]
-CSCBlue = imRedChannel * inverseM[2][0] + imGreenChannel * inverseM[2][1] + imBlueChannel*inverseM[2][2]
-
-#Brightness adjustment and gamma encoding 
-LinearScalingConst = 1.55
-gammaRed, gammaGreen, gammaBlue = linearScaling(LinearScalingConst, CSCRed, CSCGreen, CSCBlue)
-rgb_camera = np.dstack((gammaRed, gammaGreen, gammaBlue))
-
-
-plt.imshow(rgb_camera)     
-plt.show()
-#save the picture
-#io.imsave('WBGrayWorld-11.png', rgb_camera)
+main()
