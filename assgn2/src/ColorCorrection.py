@@ -1,6 +1,7 @@
 import os
 import math
 import cv2
+from matplotlib import colors
 from numpy.core.fromnumeric import reshape, shape
 from numpy.core.numeric import identity 
 from skimage import io
@@ -82,13 +83,51 @@ def CapturedCoordinateCleanup():
 
 
 def Find24Average(index, HDRimg):
+    '''Find the average of colors within the box specified by the index'''
+    imgCC = []
     for i in range(0, 24, 2):
         x0, y0 = index[i]
+        x1, y1 = index[i + 1]
+        count = (x1 - x0) * (y1 - y0)
 
+        accum = np.zeros(np.shape(HDR[0][0]))
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                accum += HDRimg[y][x]
+        
+        avg = accum / count
+        #weird thingy cuz numpy does weird concate things 
+        #append the extra 1 to make it homogenous 4 x 1
+        imgCC.append([avg[0], avg[1], avg[2], 1.0])
+        
+    return imgCC
+        
+
+def GetTransformedColorChecker():
+    '''get the color checker values such that ret[0] = block1, ret[8] = block8, etc'''
+    colorchecker = read_colorchecker_gm()
+    reshaped = []
+    for i in range(0, 6):
+        for j in range(0, 4):
+            R = colorchecker[0][j][i]
+            G = colorchecker[1][j][i]
+            B = colorchecker[2][j][i]
+
+            reshaped.append([R, G, B])
     
-#colorchecker = read_colorchecker_gm()
-print(CapturedCoordinateCleanup())
+    return reshaped
+
+
+capturedIndex = CapturedCoordinateCleanup()
 HDR = readHDR("testing16_linear.hdr")
+colorchecker = GetTransformedColorChecker()
+#change it into a 4*1 matrix
+colorchecker_img = Find24Average(capturedIndex, HDR) 
+
+print(colorchecker_img)
+print(colorchecker)
+'''
+
+
 HDR = HDR * 10
-
-
+'''

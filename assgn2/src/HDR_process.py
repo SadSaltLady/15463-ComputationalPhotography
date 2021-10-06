@@ -88,6 +88,7 @@ def LogarithmicMerging(LDR, lin, type = "tiff"):
     #get rid of weird values inside of the bottom
     #calculate for per pixel value
     imgHDR = top / bot
+    imgHDR = np.exp(imgHDR)
     return imgHDR
 
 HDRStackMain()
