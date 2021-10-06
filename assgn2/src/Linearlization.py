@@ -6,56 +6,113 @@ from skimage import io
 import numpy as np
 import matplotlib.pyplot as plt
 
+from UniversalHelpers import *
+
 # Develop RAW images 
 # dcraw -4 -w -q 3 -o 1 -T exposure2.nef
 
-def exposure(k):
-    return 1/2048 * (2**(k-1))
 
-def ImportAllImages(k, path):
-    '''reads tiffs with exposure values  <= k from path(exposure_k_.tiff),
-    returns an array where each index is an image reference, 
-    [0] is empty such that index = k '''
-    
-    allImages = [np.empty(0)]
-    for i in range(1, k+1):
-        filename = path + "exposure" + str(i) + ".jpg"
-        readFile = np.double(io.imread(filename))
-        allImages.append(readFile)
-    
-    return allImages
+def Linearlization_main():
+    #Metadata
+    n = 256
+    '''possible values for a pixel'''
+    k = 16
+    '''number of exposures used to calculate g'''
+    N = 200
+    '''downsampling rate'''
+    lmd = 40 
+    '''lambda used in the smoothing/regularization term'''
+    wz = 1 
+    '''weighting for the smoothing/regularization term'''
+    filepath = "../data/door_stack/"
+
+    #import all images into this array
+    allimages = ImportAllImages(k, filepath, ".jpg")
+
+    #generate downsampled copies of images for calculation
+    downsampled = GetDownsampled(N, allimages)
+
+    P = np.size(downsampled[1])
+    '''number of pixels per channel you sample'''
+
+    #initialize matrix A
+    Ah = P*k+256
+    Aw = P+256
+    A = np.zeros([Ah, Aw])
+
+    #init Vector B
+    B = np.zeros(Ah)
+
+    #constants needed
+    sampleW = np.size(downsampled[1], 0)
+    sampleH = np.size(downsampled[1], 1)
+
+    #Construct the A matrix
+    idxing = 0 
+    #filling the data terms
+    for kIndex in range(1, len(downsampled)): #per level
+        logtk = math.log(exposure(kIndex))
+        for i in range(0, sampleW): #per sampled pixel width; axis =0 
+            for j in range(0, sampleH): #per sampled pixel height; axis = 1
+                for chnl in range(0, 3): #per RGB channel
+                    I_ijk = downsampled[kIndex][i][j][chnl] 
+                    #note: will always be int >= 0 && <= 255
+                    weightI = Weighting(I_ijk, "photon", kIndex)
+                    #filling in A 
+                    A[idxing][int(I_ijk)] = weightI
+                    A[idxing][n + i + j*sampleW] += -weightI #should be +=?
+                    #filling in our solution B 
+                    B[idxing] = weightI * logtk
+                    #indexing
+                    idxing += 1
+
+    #setting the middle value to 0
+    A[idxing][128] = 0 #what is this doing lol
+
+    #filling in the smoothing terms
+    for i in range(0, 256 - 2):
+        idxing += 1
+        A[idxing][i] = lmd * wz
+        A[idxing][i + 1] = -2 * lmd * wz
+        A[idxing][i + 2] = lmd * wz
+
+    #try to solve
+    x, residuals, rank, s = np.linalg.lstsq(A, B)
+    print(np.shape(x))
+    print(Ah)
+    print(np.shape(residuals))
+
+    #print(x)
+    g_values = x[0:256]
+    print(g_values)
+    g_values_exp = np.exp(g_values / 10000000000)
+    print(g_values_exp)
+    input = range(0, 256)
+
+    #attempt to graph ->
+    #pixel value on the x axis
+    #the corresponding log value -> the first p*k value of X
+    _ = plt.plot(input, g_values_exp, 'o')
+    plt.show()
 
 def GetDownsampled(N, imgs):
     '''downsample the images in imgs by the factor of N'''
     downsampled = [np.empty(0)]
     for i in range(1, len(imgs)):
-        singleDownsample = imgs[i][::N, ::N]/255
+        singleDownsample = imgs[i][::N, ::N]
         downsampled.append(singleDownsample)
     return downsampled
 
-def Weighting(Z, type, k = 0):
-    '''Different Weighting functions for Z, switch weighting functions by changing 
-    input 'type'; possible values include: 
-    uniform, tent, guassian, photon (k/exposure value required)
-    '''
-    Zmin = 0.05
-    ZMax = 0.95
-    if (Z <= ZMax and Z >= Zmin):
-        if (type == "uniform"): 
-            return 1
-        elif (type == "tent"):
-            return min(Z, 1 - Z)
-        elif (type == "guassian"):
-            return math.e**(-4 * ((Z - 0.5)**2) / (0.5**2))
-        elif (type == "photon"):
-            if (k <= 0):
-                print("need to provide valid k value")
-                assert(1 == 2)
-            return exposure(k)
-        else: 
-            print("please provide valid 'type")
-            assert(1 == 2)
-    else:
-        return 0
+def GetNormalized(imgs, max):
+    '''downsample the images in imgs by the factor of N, and then divided by max'''
+    normalized = [np.empty(0)]
+    for i in range(1, len(imgs)):
+        singleNormalized = imgs[i]/max
+        normalized.append(singleNormalized)
+    return normalized
+
+
+
+
 
 

@@ -1,41 +1,93 @@
 import os
 import math
-import cv2 
+import cv2
+from numpy.core.fromnumeric import reshape, shape
+from numpy.core.numeric import identity 
 from skimage import io
-from Linearlization import *
 import numpy as np
 import matplotlib.pyplot as plt
-# Develop RAW images 
-# dcraw -4 -w -q 3 -o 1 -T exposure2.nef
+import scipy
+from scipy import optimize
 
-#1.2 Linearlize rendered images 
-#import (just a few)all images
+from Linearlization import *
+from UniversalHelpers import *
+from cp_hw2 import *
 
-#Metadata
+
+
+#metadata
 kmax = 16
-k = 5
-N = 400#200
-filepath = "../data/door_stack/"
+'''number of exposures'''
 
-#import all images into this array
-allimages = ImportAllImages(k, filepath)
-#generate downsampled copies of images for calculation
-downsampled = GetDownsampled(N, allimages)
-P = np.size(downsampled[1])
-'''number of pixels per channel you sample'''
+k = 16
+'''currently working exposures'''
 
-#initialize matrix A
-Aw = 3*P*k+256
-Ah = 3*P+256
-A = np.zeros([Ah, Aw])
+tiffMax = 2**16 - 1
+'''max pixel value in tiff file size'''
 
-#attempt to fill in A
-print(np.shape(downsampled[1]))
-print(downsampled[1][9][2])
-for kIndex in range(1, len(downsampled)): #per level
-    for i in range(0, P): #per sampled pixel
-        for chnl in range(0, 3): #per RGB channel
-            w = 0
+def HDRStackMain():
+    tiff_path = "../data/door_stack_tiff/"
+    #import stacked TIFF images
+    print("Reading " + str(k) + " Tiff Files for HDR...")
+    tiff = ImportAllImages(k, tiff_path, ".tiff")
+    tiff_normalized = GetNormalized(tiff, tiffMax)
 
+    HDR = LogarithmicMerging(tiff_normalized, tiff_normalized)
+    writeHDR("testing16_log.hdr", HDR)
+    print("image succeessfully generated")
+
+
+def LinearMerging(LDR, lin, type = "tiff"):
+    top = np.zeros(np.shape(LDR[1]))
+    bot = np.zeros(np.shape(LDR[1]))
+
+    if (type == "tiff"):
+        lin = LDR
+
+    for k in range(1, len(LDR)):
+        print("currently working on exposure of " + str(k))
+        LDRijk = LDR[k] #idea: multiple passes and then combine them
+        Linijk = lin[k]
+        #construct weight matrix
+        z1 = np.where(LDRijk >= Zmin, LDRijk, 0)
+        w = np.where(z1 <= ZMax, weightPhoton(z1,k), 0)
+
+        #do the actual stacking operation
+        topK = w * Linijk / exposure(k) #top of the dividing
+        top += topK
+        bot += w 
     
+    #calculate for per pixel value
+    imgHDR = top / bot
+    return imgHDR
 
+def LogarithmicMerging(LDR, lin, type = "tiff"):
+    top = np.zeros(np.shape(LDR[1]))
+    bot = np.zeros(np.shape(LDR[1]))
+    eps = 0.000000000000001 #14 zeros
+    if (type == "tiff"):
+        lin = LDR
+
+    for k in range(1, len(LDR)):
+        print("currently working on exposure of " + str(k))
+        log_tk = np.log(exposure(k))
+        LDRijk = LDR[k] #idea: multiple passes and then combine them
+        Linijk = lin[k]
+        #construct weight matrix
+        z1 = np.where(LDRijk >= Zmin, LDRijk, 0)
+        w = np.where(z1 <= ZMax, weightPhoton(z1,k), 0)
+
+        #construct the log matrix
+        logs = np.log(Linijk + eps) - log_tk
+
+        #do the actual stacking operation
+        topK = w * logs 
+        top += topK
+        bot += w 
+
+    #get rid of weird values inside of the bottom
+    #calculate for per pixel value
+    imgHDR = top / bot
+    return imgHDR
+
+HDRStackMain()
