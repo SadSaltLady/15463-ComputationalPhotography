@@ -15,6 +15,49 @@ from cp_hw2 import *
 
 
 
+
+processfile = "doorwayTIFF_Log_photon.hdr"
+outname = "colorCorrectedHDR.hdr"
+
+def ColorCorrectionMain(filename, outname):
+    capturedIndex = CapturedCoordinateCleanup()
+    HDR = readHDR(filename)
+    colorchecker = GetTransformedColorChecker()
+    #change it into a 4*1 matrix
+    colorchecker_img = Find24Average(capturedIndex, HDR) 
+
+    '''compute for x following the equation:
+        x = (A^T * A)^(-1)A^T * b'''
+    A = ConstructA(colorchecker_img)
+    b = np.array(colorchecker).flatten()
+
+    AT = np.transpose(A)
+    step = scipy.linalg.inv(np.matmul(AT, A)) #center step so code doesn't get too long
+    x = np.matmul(np.matmul(step, AT), b)
+    #reshape x to make it easier to do multiplication
+    x = x.reshape((3, 4))
+
+
+    shapex, shapey, shapez = np.shape(HDR)
+    #x_broadcast = np.broadcast_to(x, (shapey, 3, 4))
+
+    #make the HDR a homogenous
+    HDRHomogenous = np.ones((shapex, shapey, 4))
+    HDRHomogenous[:,:,0:3] = HDR
+    HDRHomogenous.reshape((shapex, shapey, 4, 1))
+
+    final = np.zeros(np.shape(HDR))
+
+    '''apply the transform onto my HDR image, slow af but like this is the best I got'''
+    for i in range(shapex):
+        for j in range(shapey):
+            final[i][j] = np.matmul(x,HDRHomogenous[i][j])
+
+
+    final = np.where(final >= 0, final, 0)
+    writeHDR(outname, final)
+
+
 def UsedDataCaptureCode():
     '''just keeping this here such that I can look at it later'''
     clicks = 24 * 2 + 1
@@ -134,46 +177,6 @@ def ConstructA(imgRGB):
     return A
 
 
-def ColorCorrectionMain(filename):
-    capturedIndex = CapturedCoordinateCleanup()
-    HDR = readHDR(filename)
-    colorchecker = GetTransformedColorChecker()
-    #change it into a 4*1 matrix
-    colorchecker_img = Find24Average(capturedIndex, HDR) 
-
-    '''compute for x following the equation:
-        x = (A^T * A)^(-1)A^T * b'''
-    A = ConstructA(colorchecker_img)
-    b = np.array(colorchecker).flatten()
-
-    AT = np.transpose(A)
-    step = scipy.linalg.inv(np.matmul(AT, A)) #center step so code doesn't get too long
-    x = np.matmul(np.matmul(step, AT), b)
-    #reshape x to make it easier to do multiplication
-    x = x.reshape((3, 4))
-
-
-    shapex, shapey, shapez = np.shape(HDR)
-    #x_broadcast = np.broadcast_to(x, (shapey, 3, 4))
-
-    #make the HDR a homogenous
-    HDRHomogenous = np.ones((shapex, shapey, 4))
-    HDRHomogenous[:,:,0:3] = HDR
-    HDRHomogenous.reshape((shapex, shapey, 4, 1))
-
-    final = np.zeros(np.shape(HDR))
-
-    '''apply the transform onto my HDR image, slow af but like this is the best I got'''
-    for i in range(shapex):
-        for j in range(shapey):
-            final[i][j] = np.matmul(x,HDRHomogenous[i][j])
-        
-        print(i)
-
-    final = np.where(final >= 0, final, 0)
-    writeHDR("colorCorrected_linear.hdr", final)
-    #HDRHomogenous[:,:,0:3] = fuck(HDRHomogenous[:,:,0:1], HDRHomogenous[:,:,1:2], HDRHomogenous[:,:,2:3])
-
 def WhiteBalancingMain(filename):
     HDR = readHDR(filename)
     capturedIndex = CapturedCoordinateCleanup()
@@ -195,7 +198,7 @@ def WhiteBalancingMain(filename):
 
     whiteBalancedHDR = np.dstack((WBHDR_R, WBHDR_G, WBHDR_B))
     print("yay")
-    writeHDR("whiteBalanced_linear.hdr", whiteBalancedHDR)
+    writeHDR("whiteBalanced.hdr", whiteBalancedHDR)
 
 
 def WBWhiteWorldManual(imR, imG, imB, max, maxR, maxG, maxB):
@@ -214,5 +217,5 @@ def WBWhiteWorldManual(imR, imG, imB, max, maxR, maxG, maxB):
     #this function make sense at all? 
     return (WBimR, WBimG, WBimB)
 
-WhiteBalancingMain("colorCorrected_linear.hdr")
-#ColorCorrectionMain("testing16_linear.hdr")
+WhiteBalancingMain(outname)
+#ColorCorrectionMain(processfile, outname)
